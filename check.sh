@@ -31,35 +31,39 @@ fi
 # will be a list of node names that have the applicable taint, one node per line with just the node name as the value
 NODES_TEMPLATE=$(cat $SCRIPT_PATH/nodes.tmpl | sed "s|NODE_TAINT_NAME|$NODE_TAINT|g")
 TAINTED_NODES=$(kubectl get nodes -o go-template="$NODES_TEMPLATE")
-while read -r NODE; do
-    # will be a list of pods, one pod per line, in format "namespace/podname,<N booleans representing container status>" for example 'kube-system/kube-dns,true,true,true', pods with unhealthy container statuses are removed so they don't match
-    POD_STATUSES=$(kubectl get po --field-selector=spec.nodeName=$NODE --all-namespaces -o json | jq -r '.items[] | select(.metadata.ownerReferences[0] != null) | [(.metadata.namespace + "/" + .metadata.ownerReferences[0].name), .status.containerStatuses[].ready] | @csv'  | grep -v ",false" | sed 's|"||g')
 
-    NODE_READY=true
-    NODE_NOTREADY_REASON=""
-    while read -r DAEMONSET; do
-        DS_MATCH=false
+if [ ! -z "$TAINTED_NODES" ]; then
+    while read -r NODE; do
+        # will be a list of pods, one pod per line, in format "namespace/podname,<N booleans representing container status>" for example 'kube-system/kube-dns,true,true,true', pods with unhealthy container statuses are removed so they don't match
+        POD_STATUSES=$(kubectl get po --field-selector=spec.nodeName=$NODE --all-namespaces -o json | jq -r '.items[] | select(.metadata.ownerReferences[0] != null) | [(.metadata.namespace + "/" + .metadata.ownerReferences[0].name), .status.containerStatuses[].ready] | @csv'  | grep -v ",false" | sed 's|"||g')
 
-        # check all pods, make sure we find at least one (should only be one since its a daemonset)
-        while read -r POD_STATUS; do
-            if [[ "$POD_STATUS" == "$DAEMONSET"* ]]; then
-                DS_MATCH=true
-                break
+        NODE_READY=true
+        NODE_NOTREADY_REASON=""
+        while read -r DAEMONSET; do
+            DS_MATCH=false
+
+            # check all pods, make sure we find at least one (should only be one since its a daemonset)
+            while read -r POD_STATUS; do
+                if [[ "$POD_STATUS" == "$DAEMONSET"* ]]; then
+                    DS_MATCH=true
+                    break
+                fi
+            done <<< "$POD_STATUSES"
+
+            # if we dont find a match then fail the node and add to the reason
+            if [ "$DS_MATCH" == "false" ]; then
+                NODE_READY=false
+                NODE_NOTREADY_REASON="$NODE_NOTREADY_REASON $DAEMONSET"
             fi
-        done <<< "$POD_STATUSES"
+        done <<< "$DAEMONSETS"
 
-        # if we dont find a match then fail the node and add to the reason
-        if [ "$DS_MATCH" == "false" ]; then
-            NODE_READY=false
-            NODE_NOTREADY_REASON="$NODE_NOTREADY_REASON $DAEMONSET"
+        if [ "$NODE_READY" == "true" ]; then
+            echo "Node: $NODE is ready and will be untainted!"
+            kubectl taint nodes $NODE $NODE_TAINT:NoSchedule-
+        else
+            NODE_NOTREADY_REASON=$(echo $NODE_NOTREADY_REASON | xargs)
+            echo "Node: $NODE is not ready yet ($NODE_NOTREADY_REASON are not ready)"
         fi
-    done <<< "$DAEMONSETS"
 
-    if [ "$NODE_READY" == "true" ]; then
-        echo "Node: $NODE is ready and will be untainted!"
-    else
-        NODE_NOTREADY_REASON=$(echo $NODE_NOTREADY_REASON | xargs)
-        echo "Node: $NODE is not ready yet ($NODE_NOTREADY_REASON are not ready)"
-    fi
-
-done <<< "$TAINTED_NODES"
+    done <<< "$TAINTED_NODES"
+fi

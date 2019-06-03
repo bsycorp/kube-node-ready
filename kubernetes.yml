@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kube-node-check
+  name: kube-node-ready
 ---
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRole
 metadata:
-  name: kube-node-check
+  name: kube-node-ready
 rules:
   - apiGroups:
       - ""
@@ -19,33 +19,34 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1beta1
 kind: ClusterRoleBinding
 metadata:
-  name: kube-node-check
+  name: kube-node-ready
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: kube-node-check
+  name: kube-node-ready
 subjects:
   - kind: ServiceAccount
-    name: kube-node-check
-    namespace: kube-node-check
+    name: kube-node-ready
+    namespace: kube-node-ready
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: kube-node-check
+  name: kube-node-ready
 spec:
   replicas: 1
   template:
     metadata:
+      namespace: kube-node-ready
       labels:
-        app: kube-node-check
+        app: kube-node-ready
     spec:
       containers:
-        - name: kube-node-check
-          image: bsycorp/kube-node-check:latest
+        - name: kube-node-ready
+          image: bsycorp/kube-node-ready:latest
           env:
           - name: NODE_TAINT
-            value: "node-role.kubernetes.io/master"
+            value: "node.bsycorp.kubernetes.io/uninitialized"
           - name: DAEMONSETS
-            value: "kube-system/kube-dns,kube2iam/kube2iam"
-      serviceAccountName: kube-node-check
+            value: "kube-system/kube-dns,kube2iam/kube2iam,kube-system/weave-net"
+      serviceAccountName: kube-node-ready

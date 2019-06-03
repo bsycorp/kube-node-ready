@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-node-check
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRole
+metadata:
+  name: kube-node-check
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - nodes
+    verbs:
+      - "*"
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-node-check
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-node-check
+subjects:
+  - kind: ServiceAccount
+    name: kube-node-check
+    namespace: kube-node-check
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: kube-node-check
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: kube-node-check
+    spec:
+      containers:
+        - name: kube-node-check
+          image: bsycorp/kube-node-check:latest
+          env:
+          - name: NODE_TAINT
+            value: "node-role.kubernetes.io/master"
+          - name: DAEMONSETS
+            value: "kube-system/kube-dns,kube2iam/kube2iam"
+      serviceAccountName: kube-node-check
